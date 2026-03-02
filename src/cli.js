@@ -6,7 +6,7 @@ import chalk from 'chalk';
 import { getProvider, listProviders } from './providers/index.js';
 import { runAllBenchmarks } from './runner.js';
 import { writeResults } from './reporter.js';
-import { ALL_SKILLS, SKILLS_WITHOUT_TESTS, DEFAULT_OUTPUT_DIR, DEFAULT_TIER, DEFAULT_RUNS } from './config.js';
+import { discoverSkills, DEFAULT_OUTPUT_DIR, DEFAULT_TIER, DEFAULT_RUNS } from './config.js';
 import { formatDuration } from './utils.js';
 
 program
@@ -24,36 +24,35 @@ program
 
 const opts = program.opts();
 
-// --list-providers
-if (opts.listProviders) {
-  console.log(chalk.bold('\nAvailable LLM Providers:\n'));
-  for (const p of listProviders()) {
-    const status = p.available
-      ? chalk.green('available')
-      : chalk.gray(`not set (${p.envKey})`);
-    console.log(`  ${p.name.padEnd(12)} ${p.displayName.padEnd(20)} model: ${p.defaultModel.padEnd(28)} ${status}`);
-  }
-  console.log();
-  process.exit(0);
-}
-
-// --list-skills
-if (opts.listSkills) {
-  const testable = ALL_SKILLS.filter((s) => !SKILLS_WITHOUT_TESTS.includes(s));
-  console.log(chalk.bold(`\nTestable Skills (${testable.length}):\n`));
-  for (const s of testable) {
-    console.log(`  ${s}`);
-  }
-  console.log(chalk.bold(`\nSkills Without Test Suites (${SKILLS_WITHOUT_TESTS.length}):\n`));
-  for (const s of SKILLS_WITHOUT_TESTS) {
-    console.log(`  ${chalk.gray(s)}`);
-  }
-  console.log();
-  process.exit(0);
-}
-
-// Main benchmark flow
+// Main entry — all commands run through here (async for dynamic discovery)
 async function main() {
+  // --list-providers
+  if (opts.listProviders) {
+    console.log(chalk.bold('\nAvailable LLM Providers:\n'));
+    for (const p of listProviders()) {
+      const status = p.available
+        ? chalk.green('available')
+        : chalk.gray(`not set (${p.envKey})`);
+      console.log(`  ${p.name.padEnd(12)} ${p.displayName.padEnd(20)} model: ${p.defaultModel.padEnd(28)} ${status}`);
+    }
+    console.log();
+    return;
+  }
+
+  // --list-skills (dynamically discovered from installed package)
+  if (opts.listSkills) {
+    const { testableSkills, skillsWithoutTests } = await discoverSkills();
+    console.log(chalk.bold(`\nTestable Skills (${testableSkills.length}):\n`));
+    for (const s of testableSkills) {
+      console.log(`  ${s}`);
+    }
+    console.log(chalk.bold(`\nSkills Without Test Suites (${skillsWithoutTests.length}):\n`));
+    for (const s of skillsWithoutTests) {
+      console.log(`  ${chalk.gray(s)}`);
+    }
+    console.log();
+    return;
+  }
   console.log(chalk.bold.cyan('\n  Agent Skills Benchmark Suite\n'));
 
   // Resolve provider

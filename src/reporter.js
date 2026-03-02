@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { SKILL_CATEGORIES, SKILLS_WITHOUT_TESTS } from './config.js';
+// Categories and skipped skills are passed in via benchmarkOutput
+// from dynamic discovery — no hardcoded lists.
 import { formatPercent, formatDelta, stddev, clamp } from './utils.js';
 
 /**
@@ -164,7 +165,7 @@ function generateSkillReadme(result, score) {
 /**
  * Generate master README content.
  */
-function generateMasterReadme(allResults, metadata) {
+function generateMasterReadme(allResults, metadata, categories, skillsWithoutTests) {
   const scored = allResults.map((r) => ({
     result: r,
     score: calculateEffectivenessScore(r),
@@ -215,16 +216,16 @@ function generateMasterReadme(allResults, metadata) {
   md += `Test assertions are deterministic string checks (contains, not_contains, length bounds) — no subjective LLM-as-judge scoring.\n\n`;
 
   // Results by category
-  const categories = {};
+  const categoryGroups = {};
   for (const { result, score } of scored) {
-    const cat = SKILL_CATEGORIES[result.skill] || 'other';
-    if (!categories[cat]) categories[cat] = [];
-    categories[cat].push({ result, score });
+    const cat = categories[result.skill] || 'other';
+    if (!categoryGroups[cat]) categoryGroups[cat] = [];
+    categoryGroups[cat].push({ result, score });
   }
 
   md += `## Results by Category\n\n`;
 
-  for (const [category, skills] of Object.entries(categories).sort()) {
+  for (const [category, skills] of Object.entries(categoryGroups).sort()) {
     md += `### ${category.charAt(0).toUpperCase() + category.slice(1)}\n\n`;
     md += `| Skill | Baseline | With Skill | Delta | Score |\n`;
     md += `|-------|----------|------------|-------|-------|\n`;
@@ -244,7 +245,7 @@ function generateMasterReadme(allResults, metadata) {
 
   scored.forEach(({ result, score }, i) => {
     const s = result.summary;
-    const cat = SKILL_CATEGORIES[result.skill] || 'other';
+    const cat = categories[result.skill] || 'other';
     md += `| ${i + 1} | [${result.skill}](./${result.skill}/README.md) | ${cat} | ${formatPercent(s.baselinePassRate)} | ${formatPercent(s.withSkillPassRate)} | ${formatDelta(s.avgDelta)} | **${score.total}/10** |\n`;
   });
 
@@ -252,8 +253,8 @@ function generateMasterReadme(allResults, metadata) {
 
   // Skills without tests
   md += `## Skills Without Test Suites\n\n`;
-  md += `The following ${SKILLS_WITHOUT_TESTS.length} skills have no test suite and could not be benchmarked:\n\n`;
-  for (const s of SKILLS_WITHOUT_TESTS) {
+  md += `The following ${skillsWithoutTests.length} skills have no test suite and could not be benchmarked:\n\n`;
+  for (const s of skillsWithoutTests) {
     md += `- ${s}\n`;
   }
   md += `\n`;
@@ -268,7 +269,7 @@ function generateMasterReadme(allResults, metadata) {
  * Write all benchmark results to the output directory.
  */
 export function writeResults(benchmarkOutput, outputDir) {
-  const { results, metadata } = benchmarkOutput;
+  const { results, metadata, skipped: skillsWithoutTests = [], categories = {} } = benchmarkOutput;
 
   // Ensure output dir exists
   fs.mkdirSync(outputDir, { recursive: true });
@@ -308,14 +309,14 @@ export function writeResults(benchmarkOutput, outputDir) {
     metadata,
     results: scoredResults.map((r) => ({
       skill: r.skill,
-      category: SKILL_CATEGORIES[r.skill] || 'other',
+      category: categories[r.skill] || 'other',
       baselinePassRate: r.summary.baselinePassRate,
       withSkillPassRate: r.summary.withSkillPassRate,
       avgDelta: r.summary.avgDelta,
       totalCases: r.summary.totalCases,
       effectivenessScore: r.effectivenessScore,
     })),
-    skillsWithoutTests: SKILLS_WITHOUT_TESTS,
+    skillsWithoutTests,
   };
 
   fs.writeFileSync(
@@ -326,7 +327,7 @@ export function writeResults(benchmarkOutput, outputDir) {
   // Write master README
   fs.writeFileSync(
     path.join(outputDir, 'README.md'),
-    generateMasterReadme(results, metadata)
+    generateMasterReadme(results, metadata, categories, skillsWithoutTests)
   );
 
   return {

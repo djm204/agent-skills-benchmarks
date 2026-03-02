@@ -1,6 +1,6 @@
 import path from 'path';
 import { loadSkill, loadTestSuite, runBenchmark } from '@djm204/agent-skills/api';
-import { SKILLS_DIR, ALL_SKILLS, SKILLS_WITHOUT_TESTS } from './config.js';
+import { SKILLS_DIR, discoverSkills } from './config.js';
 import { printSkillProgress, timestamp } from './utils.js';
 import chalk from 'chalk';
 
@@ -35,19 +35,20 @@ function createCapturingProvider(provider) {
  */
 export async function runAllBenchmarks(provider, options = {}) {
   const { skill: singleSkill, runs = 1, tier = 'standard' } = options;
+  const { allSkills, testableSkills, skillsWithoutTests } = await discoverSkills();
 
   // Determine which skills to benchmark
   let skillNames;
   if (singleSkill) {
-    if (!ALL_SKILLS.includes(singleSkill)) {
+    if (!allSkills.includes(singleSkill)) {
       throw new Error(`Unknown skill "${singleSkill}". Use --list-skills to see available skills.`);
     }
-    if (SKILLS_WITHOUT_TESTS.includes(singleSkill)) {
+    if (!testableSkills.includes(singleSkill)) {
       throw new Error(`Skill "${singleSkill}" has no test suite and cannot be benchmarked.`);
     }
     skillNames = [singleSkill];
   } else {
-    skillNames = ALL_SKILLS.filter((s) => !SKILLS_WITHOUT_TESTS.includes(s));
+    skillNames = testableSkills;
   }
 
   const total = skillNames.length;
@@ -118,9 +119,12 @@ export async function runAllBenchmarks(provider, options = {}) {
     console.log(chalk.red(`  ${errors.length} skill(s) had errors`));
   }
 
+  const { categories } = await discoverSkills();
+
   return {
     results,
-    skipped: SKILLS_WITHOUT_TESTS,
+    skipped: skillsWithoutTests,
+    categories,
     errors,
     metadata: {
       provider: provider.providerName,
@@ -130,7 +134,7 @@ export async function runAllBenchmarks(provider, options = {}) {
       totalDurationMs,
       timestamp: timestamp(),
       skillsBenchmarked: results.length,
-      skillsSkipped: SKILLS_WITHOUT_TESTS.length,
+      skillsSkipped: skillsWithoutTests.length,
       skillsErrored: errors.length,
     },
   };
