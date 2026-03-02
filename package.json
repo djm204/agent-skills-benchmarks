@@ -7,7 +7,8 @@
     "benchmark": "./src/cli.js"
   },
   "scripts": {
-    "benchmark": "node src/cli.js"
+    "benchmark": "node src/cli.js",
+    "serve": "npx serve ."
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

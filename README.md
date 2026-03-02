@@ -116,6 +116,16 @@ Each skill receives a score out of 10:
 | Improvement over baseline | 3 | Delta vs. bare model (clamped 0–1) |
 | Consistency | 2 | Low variance across test cases |
 
+## Viewing Results
+
+After running benchmarks, launch the diff viewer to compare baseline vs skill-prompted responses side-by-side:
+
+```bash
+npm run serve
+```
+
+Then open http://localhost:3000/web/ in your browser. The viewer loads results from `./results/` and shows each test case with the baseline and skill responses in a split diff view.
+
 ## Coverage
 
 36 of 44 skills have test suites and are benchmarked. The following 8 skills have no test cases and are listed as N/A in results:
