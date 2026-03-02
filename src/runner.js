@@ -5,6 +5,25 @@ import { printSkillProgress, timestamp } from './utils.js';
 import chalk from 'chalk';
 
 /**
+ * Wrap a provider to intercept and cache raw response text.
+ * The upstream runBenchmark() discards responses after scoring —
+ * we need them for the diff website.
+ */
+function createCapturingProvider(provider) {
+  const captured = new Map();
+  const wrapper = async (prompt, systemPrompt) => {
+    const response = await provider(prompt, systemPrompt);
+    const key = systemPrompt ? `skill:${prompt}` : `baseline:${prompt}`;
+    captured.set(key, response);
+    return response;
+  };
+  wrapper.modelId = provider.modelId;
+  wrapper.providerName = provider.providerName;
+  wrapper.captured = captured;
+  return wrapper;
+}
+
+/**
  * Run benchmarks for the specified skills (or all testable skills).
  *
  * @param {Function} provider - LLM provider function (prompt, systemPrompt?) => string
@@ -54,8 +73,15 @@ export async function runAllBenchmarks(provider, options = {}) {
         continue;
       }
 
-      const result = await runBenchmark(suite, skill.systemPrompt, provider, { runs });
+      const capturingProvider = createCapturingProvider(provider);
+      const result = await runBenchmark(suite, skill.systemPrompt, capturingProvider, { runs });
       const durationMs = Date.now() - skillStartTime;
+
+      // Attach captured raw responses to each case
+      for (const c of result.cases) {
+        c.baseline.response = capturingProvider.captured.get(`baseline:${c.prompt}`) || null;
+        c.withSkill.response = capturingProvider.captured.get(`skill:${c.prompt}`) || null;
+      }
 
       // Augment with metadata
       const augmented = {
