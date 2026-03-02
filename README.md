@@ -19,18 +19,11 @@ No LLM-as-judge. No subjective evaluation. All scoring is deterministic string m
 npm install
 ```
 
-Set an API key for any supported provider:
+Add your API key(s) to a `.env` file:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-# or
-export OPENAI_API_KEY=sk-...
-# or
-export GOOGLE_API_KEY=...
-# or
-export MISTRAL_API_KEY=...
-# or
-export GROQ_API_KEY=gsk_...
+cp .env.example .env
+# then edit .env with your key(s)
 ```
 
 Run the benchmarks:
