@@ -304,30 +304,90 @@ export function writeResults(benchmarkOutput, outputDir) {
     );
   }
 
-  // Write summary JSON
+  // Build current run's result entries
+  const currentResults = scoredResults.map((r) => ({
+    skill: r.skill,
+    category: categories[r.skill] || 'other',
+    baselinePassRate: r.summary.baselinePassRate,
+    withSkillPassRate: r.summary.withSkillPassRate,
+    avgDelta: r.summary.avgDelta,
+    totalCases: r.summary.totalCases,
+    effectivenessScore: r.effectivenessScore,
+  }));
+
+  // Merge with existing summary so single-skill runs don't clobber previous results
+  const summaryPath = path.join(outputDir, 'summary.json');
+  let mergedResults = currentResults;
+  try {
+    const existing = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+    if (Array.isArray(existing.results)) {
+      const currentSkills = new Set(currentResults.map((r) => r.skill));
+      const kept = existing.results.filter((r) => !currentSkills.has(r.skill));
+      mergedResults = [...kept, ...currentResults].sort((a, b) =>
+        a.skill.localeCompare(b.skill)
+      );
+    }
+  } catch {
+    // No existing summary — use current results only
+  }
+
+  // Also scan for result.json files from previous runs not in summary
+  // so that the web viewer always reflects everything on disk
+  try {
+    const dirs = fs.readdirSync(outputDir, { withFileTypes: true });
+    const knownSkills = new Set(mergedResults.map((r) => r.skill));
+    for (const entry of dirs) {
+      if (!entry.isDirectory() || knownSkills.has(entry.name)) continue;
+      const resultFile = path.join(outputDir, entry.name, 'result.json');
+      if (!fs.existsSync(resultFile)) continue;
+      try {
+        const prev = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
+        if (prev.skill && prev.summary) {
+          mergedResults.push({
+            skill: prev.skill,
+            category: categories[prev.skill] || prev.category || 'other',
+            baselinePassRate: prev.summary.baselinePassRate,
+            withSkillPassRate: prev.summary.withSkillPassRate,
+            avgDelta: prev.summary.avgDelta,
+            totalCases: prev.summary.totalCases,
+            effectivenessScore: prev.effectivenessScore || calculateEffectivenessScore(prev),
+          });
+        }
+      } catch {
+        // Skip corrupted result files
+      }
+    }
+    mergedResults.sort((a, b) => a.skill.localeCompare(b.skill));
+  } catch {
+    // Output dir scan failed — use what we have
+  }
+
   const summary = {
     metadata,
-    results: scoredResults.map((r) => ({
-      skill: r.skill,
-      category: categories[r.skill] || 'other',
-      baselinePassRate: r.summary.baselinePassRate,
-      withSkillPassRate: r.summary.withSkillPassRate,
-      avgDelta: r.summary.avgDelta,
-      totalCases: r.summary.totalCases,
-      effectivenessScore: r.effectivenessScore,
-    })),
+    results: mergedResults,
     skillsWithoutTests,
   };
 
   fs.writeFileSync(
-    path.join(outputDir, 'summary.json'),
+    summaryPath,
     JSON.stringify(summary, null, 2) + '\n'
   );
 
-  // Write master README
+  // Write master README using all known results (load full data for merged skills)
+  const allResultsForReadme = [];
+  for (const entry of mergedResults) {
+    const resultFile = path.join(outputDir, entry.skill, 'result.json');
+    try {
+      const full = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
+      allResultsForReadme.push(full);
+    } catch {
+      // Skip if full result not readable
+    }
+  }
+
   fs.writeFileSync(
     path.join(outputDir, 'README.md'),
-    generateMasterReadme(results, metadata, categories, skillsWithoutTests)
+    generateMasterReadme(allResultsForReadme, metadata, categories, skillsWithoutTests)
   );
 
   return {
