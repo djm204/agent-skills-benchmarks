@@ -121,6 +121,4 @@ Then open http://localhost:3000/web/ in your browser. The viewer loads results f
 
 ## Coverage
 
-36 of 44 skills have test suites and are benchmarked. The following 8 skills have no test cases and are listed as N/A in results:
-
-blockchain, devops-sre, educator, executive-assistant, javascript-expert, market-intelligence, product-manager, web-backend
+Coverage is detected dynamically from the installed `@djm204/agent-skills` package. Run `npm run benchmark -- --list-skills` to see current testable skills and any that lack test suites.
