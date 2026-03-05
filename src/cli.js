@@ -5,9 +5,10 @@ import { program } from 'commander';
 import chalk from 'chalk';
 import { getProvider, listProviders } from './providers/index.js';
 import { runAllBenchmarks } from './runner.js';
-import { writeResults } from './reporter.js';
+import { writeResults, writeResultsToDb } from './reporter.js';
 import { discoverSkills, DEFAULT_OUTPUT_DIR, DEFAULT_TIER, DEFAULT_RUNS } from './config.js';
 import { formatDuration } from './utils.js';
+import { createRun } from './db.js';
 
 program
   .name('benchmark')
@@ -20,12 +21,21 @@ program
   .option('-o, --output <dir>', 'Output directory for results', DEFAULT_OUTPUT_DIR)
   .option('--list-providers', 'Show available LLM providers and exit')
   .option('--list-skills', 'Show testable skills and exit')
+  .option('--serve', 'Start the benchmark dashboard server')
+  .option('--port <port>', 'Server port (with --serve)', (v) => parseInt(v, 10), 3000)
   .parse();
 
 const opts = program.opts();
 
 // Main entry — all commands run through here (async for dynamic discovery)
 async function main() {
+  // --serve
+  if (opts.serve) {
+    const { startServer } = await import('./server.js');
+    await startServer(opts.port);
+    return;
+  }
+
   // --list-providers
   if (opts.listProviders) {
     console.log(chalk.bold('\nAvailable LLM Providers:\n'));
@@ -89,8 +99,17 @@ async function main() {
     process.exit(1);
   }
 
-  // Write results
+  // Write results (JSON + DB)
   const output = writeResults(benchmarkOutput, opts.output);
+
+  const runId = createRun({
+    provider: provider.providerName,
+    model: provider.modelId,
+    tier: opts.tier,
+    runsPerCase: opts.runs,
+  });
+  writeResultsToDb(benchmarkOutput, runId);
+
   const totalDuration = Date.now() - startTime;
 
   // Summary
