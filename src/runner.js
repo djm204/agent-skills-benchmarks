@@ -2,6 +2,7 @@ import path from 'path';
 import { loadSkill, loadTestSuite, runBenchmark } from '@djm204/agent-skills/api';
 import { SKILLS_DIR, discoverSkills } from './config.js';
 import { printSkillProgress, timestamp } from './utils.js';
+import { calculateEffectivenessScore } from './reporter.js';
 import chalk from 'chalk';
 
 /**
@@ -29,12 +30,14 @@ function createCapturingProvider(provider) {
  * @param {Function} provider - LLM provider function (prompt, systemPrompt?) => string
  * @param {object} options
  * @param {string} [options.skill] - Single skill name to benchmark
+ * @param {string[]} [options.skills] - Multiple skill names to benchmark (from web UI)
  * @param {number} [options.runs] - Runs per test case
  * @param {string} [options.tier] - Skill tier
+ * @param {Function} [options.onProgress] - Callback for SSE progress events
  * @returns {Promise<{ results: object[], skipped: string[], metadata: object }>}
  */
 export async function runAllBenchmarks(provider, options = {}) {
-  const { skill: singleSkill, runs = 1, tier = 'standard' } = options;
+  const { skill: singleSkill, skills: multipleSkills, runs = 1, tier = 'standard', onProgress } = options;
   const { allSkills, testableSkills, skillsWithoutTests } = await discoverSkills();
 
   // Determine which skills to benchmark
@@ -47,6 +50,11 @@ export async function runAllBenchmarks(provider, options = {}) {
       throw new Error(`Skill "${singleSkill}" has no test suite and cannot be benchmarked.`);
     }
     skillNames = [singleSkill];
+  } else if (multipleSkills && multipleSkills.length > 0) {
+    skillNames = multipleSkills.filter((s) => testableSkills.includes(s));
+    if (skillNames.length === 0) {
+      throw new Error('None of the selected skills have test suites.');
+    }
   } else {
     skillNames = testableSkills;
   }
@@ -62,6 +70,8 @@ export async function runAllBenchmarks(provider, options = {}) {
     const skillName = skillNames[i];
     const skillPath = path.join(SKILLS_DIR, skillName);
     const skillStartTime = Date.now();
+
+    onProgress?.({ event: 'skill:start', skill: skillName, index: i, total });
 
     try {
       const skill = await loadSkill(skillPath, { tier });
@@ -100,12 +110,23 @@ export async function runAllBenchmarks(provider, options = {}) {
 
       results.push(augmented);
       printSkillProgress(i, total, skillName, result);
+
+      onProgress?.({
+        event: 'skill:complete',
+        skill: skillName,
+        index: i,
+        total,
+        summary: result.summary,
+        score: calculateEffectivenessScore(augmented),
+        durationMs,
+      });
     } catch (err) {
       const durationMs = Date.now() - skillStartTime;
       console.log(
         `  [${i + 1}/${total}] ${skillName.padEnd(28)} ${chalk.red('ERROR')} ${err.message}`
       );
       errors.push({ skill: skillName, error: err.message, durationMs });
+      onProgress?.({ event: 'skill:error', skill: skillName, index: i, total, error: err.message });
     }
   }
 

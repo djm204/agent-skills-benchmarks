@@ -3,6 +3,12 @@ import path from 'path';
 // Categories and skipped skills are passed in via benchmarkOutput
 // from dynamic discovery — no hardcoded lists.
 import { formatPercent, formatDelta, stddev, clamp } from './utils.js';
+import {
+  insertSkillResult,
+  insertTestCases,
+  insertSkillsWithoutTests,
+  updateRunStatus,
+} from './db.js';
 
 /**
  * Calculate effectiveness score (0-10) for a benchmark result.
@@ -396,4 +402,62 @@ export function writeResults(benchmarkOutput, outputDir) {
     summaryPath: path.join(outputDir, 'summary.json'),
     readmePath: path.join(outputDir, 'README.md'),
   };
+}
+
+/**
+ * Write benchmark results to SQLite database.
+ */
+export function writeResultsToDb(benchmarkOutput, runId) {
+  const { results, skipped: skillsWithoutTests = [], categories = {}, metadata } = benchmarkOutput;
+
+  for (const result of results) {
+    const score = calculateEffectivenessScore(result);
+
+    const skillResultId = insertSkillResult(runId, {
+      skill: result.skill,
+      category: categories[result.skill] || 'other',
+      baselinePassRate: result.summary.baselinePassRate,
+      withSkillPassRate: result.summary.withSkillPassRate,
+      avgDelta: result.summary.avgDelta,
+      totalCases: result.summary.totalCases,
+      runsPerCase: result.metadata?.runs || metadata.runs || 1,
+      durationMs: result.metadata?.durationMs || 0,
+      tier: result.metadata?.tier || metadata.tier || 'standard',
+      scoreTotal: score.total,
+      scoreAbsolute: score.absolute,
+      scoreImprovement: score.improvement,
+      scoreConsistency: score.consistency,
+    });
+
+    if (result.cases) {
+      insertTestCases(
+        skillResultId,
+        result.cases.map((c) => ({
+          caseId: c.id,
+          prompt: c.prompt,
+          baselineScore: c.baseline.score,
+          baselinePassed: c.baseline.passed,
+          baselineFailures: c.baseline.failures,
+          baselineResponse: c.baseline.response,
+          withSkillScore: c.withSkill.score,
+          withSkillPassed: c.withSkill.passed,
+          withSkillFailures: c.withSkill.failures,
+          withSkillResponse: c.withSkill.response,
+          delta: c.delta,
+        }))
+      );
+    }
+  }
+
+  if (skillsWithoutTests.length > 0) {
+    insertSkillsWithoutTests(runId, skillsWithoutTests);
+  }
+
+  updateRunStatus(runId, {
+    status: 'completed',
+    totalDurationMs: metadata.totalDurationMs,
+    skillsBenchmarked: metadata.skillsBenchmarked || results.length,
+    skillsSkipped: metadata.skillsSkipped || skillsWithoutTests.length,
+    skillsErrored: metadata.skillsErrored || 0,
+  });
 }
