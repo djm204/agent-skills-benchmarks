@@ -8,13 +8,15 @@
   },
   "scripts": {
     "benchmark": "node src/cli.js",
-    "serve": "npx serve ."
+    "serve": "node src/cli.js --serve",
+    "seed": "node src/seed.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@djm204/agent-skills": "^1.5.0",
     "@google/generative-ai": "^0.21.0",
     "@mistralai/mistralai": "^1.5.0",
+    "better-sqlite3": "^12.6.2",
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "dotenv": "^17.3.1",
